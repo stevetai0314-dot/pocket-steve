@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>工廠助理 / Trợ lý nhà máy</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f0f2f5; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+
+    .lang-btn {
+      position: fixed; top: 16px; right: 16px;
+      background: #fff; border: 1px solid #ddd; border-radius: 20px;
+      padding: 6px 14px; cursor: pointer; font-size: 14px; z-index: 100;
+    }
+
+    /* LOGIN */
+    #login-view {
+      background: #fff; border-radius: 12px; padding: 32px;
+      width: 320px; box-shadow: 0 2px 16px rgba(0,0,0,0.1);
+    }
+    #login-view h1 { font-size: 20px; margin-bottom: 8px; }
+    #login-view p { color: #666; font-size: 14px; margin-bottom: 24px; }
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; font-size: 13px; color: #555; margin-bottom: 6px; }
+    .form-group input {
+      width: 100%; padding: 10px 12px; border: 1px solid #ddd;
+      border-radius: 8px; font-size: 15px; outline: none;
+    }
+    .form-group input:focus { border-color: #007aff; }
+    .btn-primary {
+      width: 100%; padding: 12px; background: #007aff; color: #fff;
+      border: none; border-radius: 8px; font-size: 16px; cursor: pointer; margin-top: 8px;
+    }
+    .btn-primary:disabled { background: #aaa; cursor: not-allowed; }
+    .error-msg { color: #e53e3e; font-size: 13px; margin-top: 8px; min-height: 20px; }
+
+    /* CHAT */
+    #chat-view { display: none; flex-direction: column; height: 100vh; width: 100%; max-width: 640px; }
+    .chat-header {
+      background: #fff; padding: 12px 16px; border-bottom: 1px solid #eee;
+      display: flex; justify-content: space-between; align-items: center;
+      position: sticky; top: 0; z-index: 10;
+    }
+    .chat-header .worker-info { font-size: 14px; color: #555; }
+    .chat-header .quota { font-size: 13px; color: #007aff; font-weight: 600; }
+    .messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+    .msg { max-width: 80%; padding: 10px 14px; border-radius: 12px; font-size: 15px; line-height: 1.5; white-space: pre-wrap; }
+    .msg.user { background: #007aff; color: #fff; align-self: flex-end; border-bottom-right-radius: 4px; }
+    .msg.assistant { background: #fff; color: #222; align-self: flex-start; border-bottom-left-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+    .msg.loading { color: #999; font-style: italic; }
+    .chat-input-area {
+      background: #fff; border-top: 1px solid #eee; padding: 12px 16px;
+      display: flex; gap: 8px; align-items: flex-end;
+    }
+    .chat-input-area textarea {
+      flex: 1; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px;
+      font-size: 15px; resize: none; outline: none; max-height: 120px; font-family: inherit;
+    }
+    .chat-input-area textarea:focus { border-color: #007aff; }
+    .send-btn {
+      padding: 10px 18px; background: #007aff; color: #fff;
+      border: none; border-radius: 8px; cursor: pointer; font-size: 15px;
+      white-space: nowrap;
+    }
+    .send-btn:disabled { background: #aaa; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+
+<button class="lang-btn" id="lang-toggle" onclick="toggleLang()">Tiếng Việt</button>
+
+<!-- LOGIN VIEW -->
+<div id="login-view">
+  <h1 id="t-title">工廠助理</h1>
+  <p id="t-subtitle">請輸入工號與姓名</p>
+  <div class="form-group">
+    <label id="t-id-label">工號</label>
+    <input type="text" id="worker-id" placeholder="A001" autocomplete="off">
+  </div>
+  <div class="form-group">
+    <label id="t-name-label">姓名</label>
+    <input type="text" id="worker-name" placeholder="王小明" autocomplete="off">
+  </div>
+  <button class="btn-primary" id="login-btn" onclick="doLogin()">
+    <span id="t-login-btn">登入</span>
+  </button>
+  <div class="error-msg" id="login-error"></div>
+</div>
+
+<!-- CHAT VIEW -->
+<div id="chat-view">
+  <div class="chat-header">
+    <span class="worker-info" id="header-name"></span>
+    <span class="quota" id="header-quota"></span>
+  </div>
+  <div class="messages" id="messages"></div>
+  <div class="chat-input-area">
+    <textarea id="msg-input" rows="1" oninput="autoResize(this)" onkeydown="handleKey(event)"></textarea>
+    <button class="send-btn" id="send-btn" onclick="sendMessage()">
+      <span id="t-send-btn">送出</span>
+    </button>
+  </div>
+</div>
+
+<script>
+  // ── CONFIG ──────────────────────────────────────────────
+  const GAS_URL = 'PASTE_YOUR_GAS_WEB_APP_URL_HERE';
+  // ────────────────────────────────────────────────────────
+
+  let lang = 'zh';
+  let currentWorker = null;
+  let remaining = 30;
+
+  const i18n = {
+    zh: {
+      title: '工廠助理',
+      subtitle: '請輸入工號與姓名',
+      idLabel: '工號',
+      nameLabel: '姓名',
+      loginBtn: '登入',
+      sendBtn: '送出',
+      placeholder: '輸入問題...',
+      langToggle: 'Tiếng Việt',
+      loading: '思考中...',
+      remaining: (n) => `今日剩餘 ${n} 次`,
+      err_not_found: '工號不存在',
+      err_name_mismatch: '姓名不符',
+      err_quota_exceeded: '今日已達上限 (30次)',
+      err_server: '系統錯誤，請稍後再試',
+    },
+    vi: {
+      title: 'Trợ lý nhà máy',
+      subtitle: 'Nhập mã nhân viên và tên',
+      idLabel: 'Mã nhân viên',
+      nameLabel: 'Họ và tên',
+      loginBtn: 'Đăng nhập',
+      sendBtn: 'Gửi',
+      placeholder: 'Nhập câu hỏi...',
+      langToggle: '中文',
+      loading: 'Đang suy nghĩ...',
+      remaining: (n) => `Còn lại ${n} câu`,
+      err_not_found: 'Mã nhân viên không tồn tại',
+      err_name_mismatch: 'Tên không khớp',
+      err_quota_exceeded: 'Đã đạt giới hạn hôm nay (30 câu)',
+      err_server: 'Lỗi hệ thống, vui lòng thử lại',
+    }
+  };
+
+  function t(key, ...args) {
+    const val = i18n[lang][key];
+    return typeof val === 'function' ? val(...args) : val;
+  }
+
+  function toggleLang() {
+    lang = lang === 'zh' ? 'vi' : 'zh';
+    applyLang();
+  }
+
+  function applyLang() {
+    document.getElementById('lang-toggle').textContent = t('langToggle');
+    document.getElementById('t-title').textContent = t('title');
+    document.getElementById('t-subtitle').textContent = t('subtitle');
+    document.getElementById('t-id-label').textContent = t('idLabel');
+    document.getElementById('t-name-label').textContent = t('nameLabel');
+    document.getElementById('t-login-btn').textContent = t('loginBtn');
+    document.getElementById('t-send-btn').textContent = t('sendBtn');
+    const msgInput = document.getElementById('msg-input');
+    if (msgInput) msgInput.placeholder = t('placeholder');
+    if (currentWorker) {
+      document.getElementById('header-quota').textContent = t('remaining', remaining);
+    }
+  }
+
+  async function doLogin() {
+    const workerId = document.getElementById('worker-id').value.trim();
+    const name = document.getElementById('worker-name').value.trim();
+    const btn = document.getElementById('login-btn');
+    const errEl = document.getElementById('login-error');
+
+    if (!workerId || !name) return;
+
+    btn.disabled = true;
+    errEl.textContent = '';
+
+    try {
+      const res = await gasPost({ action: 'validate', worker_id: workerId, name });
+      if (res.ok) {
+        currentWorker = { id: workerId, name };
+        remaining = res.remaining;
+        showChat();
+      } else {
+        errEl.textContent = t('err_' + res.error) || t('err_server');
+      }
+    } catch (e) {
+      errEl.textContent = t('err_server');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  function showChat() {
+    document.getElementById('login-view').style.display = 'none';
+    const chatView = document.getElementById('chat-view');
+    chatView.style.display = 'flex';
+    document.getElementById('header-name').textContent = currentWorker.name;
+    document.getElementById('header-quota').textContent = t('remaining', remaining);
+    document.getElementById('msg-input').placeholder = t('placeholder');
+  }
+
+  async function sendMessage() {
+    const input = document.getElementById('msg-input');
+    const message = input.value.trim();
+    if (!message || remaining <= 0) return;
+
+    input.value = '';
+    autoResize(input);
+
+    addMessage('user', message);
+    const loadingEl = addMessage('assistant', t('loading'), 'loading');
+    document.getElementById('send-btn').disabled = true;
+
+    try {
+      const res = await gasPost({
+        action: 'chat',
+        worker_id: currentWorker.id,
+        name: currentWorker.name,
+        message,
+        lang
+      });
+
+      loadingEl.remove();
+
+      if (res.ok) {
+        addMessage('assistant', res.reply);
+        remaining = res.remaining;
+        document.getElementById('header-quota').textContent = t('remaining', remaining);
+      } else if (res.error === 'quota_exceeded') {
+        addMessage('assistant', t('err_quota_exceeded'));
+        remaining = 0;
+      } else {
+        addMessage('assistant', t('err_server'));
+      }
+    } catch (e) {
+      loadingEl.remove();
+      addMessage('assistant', t('err_server'));
+    } finally {
+      document.getElementById('send-btn').disabled = false;
+      input.focus();
+    }
+  }
+
+  function addMessage(role, text, extraClass) {
+    const el = document.createElement('div');
+    el.className = 'msg ' + role + (extraClass ? ' ' + extraClass : '');
+    el.textContent = text;
+    const container = document.getElementById('messages');
+    container.appendChild(el);
+    container.scrollTop = container.scrollHeight;
+    return el;
+  }
+
+  async function gasPost(data) {
+    const res = await fetch(GAS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  }
+
+  function handleKey(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  }
+
+  function autoResize(el) {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+  }
+
+  applyLang();
+</script>
+</body>
+</html>
