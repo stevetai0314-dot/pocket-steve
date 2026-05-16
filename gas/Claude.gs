@@ -10,6 +10,8 @@ function callClaude(userMessage, skillContent, lang) {
 
 Answer ONLY based on the knowledge in the SKILLs below. If the question is outside these SKILLs, say you don't know in the appropriate language. Keep answers concise and practical.
 
+At the end of every answer, add one line: 【來源：SKILL名稱 — 章節標題】. If the answer draws from multiple sections, list them all. If you cannot find the answer in the SKILLs, write 【來源：不在知識庫範圍內】.
+
 ${skillContent}`;
 
   const payload = {
